@@ -1,0 +1,1 @@
+{"functions":{"api/config.js":{"runtime":"nodejs20.x"}},"rewrites":[{"source":"/api/config","destination":"/api/config.js"}]}
