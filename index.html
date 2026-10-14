@@ -246,8 +246,8 @@ async function openCriticApplication(){
   if(!user){openLogin();return}
   const modal=document.getElementById('apply');
   if(!modal)return;
-  await fillApplication();
   modal.classList.add('show');
+  try{await fillApplication()}catch(e){console.error('Critic application error:',e)}
 }
 async function fillApplication(){
   if(!user)return;
