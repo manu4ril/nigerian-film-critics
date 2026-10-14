@@ -142,12 +142,21 @@ function memberTab(tab){
   if(tab==='notifications')loadNotifications();
   window.scrollTo({top:0,behavior:'smooth'});
 }
+let myReviewsCache=[];
 async function loadMyReviews(){
  if(!user)return; const el=document.getElementById('memberReviewsList'); if(!el)return;
  let r=await sb.from('critic_review_submissions').select('id,title,status,created_at,admin_notes').eq('user_id',user.id).order('created_at',{ascending:false});
  if(r.error){el.innerHTML='<p class="muted">'+esc(r.error.message)+'</p>';return}
- const rows=r.data||[]; if(!rows.length){el.innerHTML='<p class="muted">No review submissions yet. Verified critics can submit their first review from the Critic Application tab.</p>';return}
- el.innerHTML=rows.map(x=>'<div class="review-row"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><strong>'+esc(x.title)+'</strong><span class="status-pill">'+esc((x.status||'pending').charAt(0).toUpperCase()+(x.status||'pending').slice(1))+'</span></div><small class="muted">'+new Date(x.created_at).toLocaleString()+'</small>'+(x.admin_notes?'<p class="muted" style="margin:8px 0 0">Admin note: '+esc(x.admin_notes)+'</p>':'')+'</div>').join('');
+ myReviewsCache=r.data||[]; renderMyReviews('all');
+}
+function renderMyReviews(filter){
+ const el=document.getElementById('memberReviewsList');if(!el)return;
+ const counts={all:myReviewsCache.length,pending:0,approved:0,rejected:0};
+ myReviewsCache.forEach(x=>{if(counts[x.status]!==undefined)counts[x.status]++});
+ const rows=filter==='all'?myReviewsCache:myReviewsCache.filter(x=>(x.status||'pending')===filter);
+ const buttons=['all','pending','approved','rejected'].map(s=>'<button type="button" class="btn '+(filter===s?'gold':'dark')+'" onclick="renderMyReviews(\''+s+'\')">'+s.charAt(0).toUpperCase()+s.slice(1)+' ('+counts[s]+')</button>').join(' ');
+ if(!myReviewsCache.length){el.innerHTML='<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center"><p class="muted">You have not submitted any film reviews yet.</p><button class="btn gold" onclick="openCriticReviewSubmit()">Submit a film review</button></div>';return}
+ el.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">'+buttons+'</div>'+rows.map(x=>'<div class="review-row"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><strong>'+esc(x.title)+'</strong><div class="muted" style="margin-top:4px">Submitted '+new Date(x.created_at).toLocaleDateString()+'</div></div><span class="status-pill">'+esc((x.status||'pending').charAt(0).toUpperCase()+(x.status||'pending').slice(1))+'</span></div>'+(x.status==='approved'?'<p class="muted" style="margin:10px 0 0">Approved and published by the editorial team.</p>':'')+(x.status==='rejected'?'<p class="muted" style="margin:10px 0 0">Not approved. '+(x.admin_notes?'Admin note: '+esc(x.admin_notes):'Review the editorial feedback in your application.')+'</p>':'')+(x.status==='pending'?'<p class="muted" style="margin:10px 0 0">Awaiting editorial review.</p>':'')+'</div>').join('')+(rows.length?'':'<p class="muted">No reviews match this status.</p>');
 }
 async function refreshAccount(){
   if(!user)return;
