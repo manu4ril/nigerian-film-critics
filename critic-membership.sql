@@ -1,5 +1,5 @@
--- Nigerian Film Critics: member + critic verification layer
--- Run this AFTER the existing supabase-schema.sql in Supabase SQL Editor.
+-- Nigerian Film Critics: member + verified critic layer
+-- Run this AFTER supabase-schema.sql in the Supabase SQL Editor.
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -27,8 +27,16 @@ create table if not exists public.critic_applications (
   reviewed_at timestamptz
 );
 
-alter table public.critics add column if not exists user_id uuid references auth.users(id) on delete set null;
-create unique index if not exists critics_user_id_unique on public.critics(user_id) where user_id is not null;
+create unique index if not exists one_pending_critic_application_per_user
+on public.critic_applications(user_id)
+where status = 'pending';
+
+alter table public.critics
+  add column if not exists user_id uuid references auth.users(id) on delete set null;
+
+create unique index if not exists critics_user_id_unique
+on public.critics(user_id)
+where user_id is not null;
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -37,7 +45,13 @@ security definer set search_path = public
 as $$
 begin
   insert into public.profiles (id, display_name)
-  values (new.id, coalesce(new.raw_user_meta_data->>'display_name', split_part(coalesce(new.email,''),'@',1)))
+  values (
+    new.id,
+    coalesce(
+      new.raw_user_meta_data->>'display_name',
+      split_part(coalesce(new.email,''),'@',1)
+    )
+  )
   on conflict (id) do nothing;
   return new;
 end;
@@ -45,31 +59,151 @@ $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute procedure public.handle_new_user();
+after insert on auth.users
+for each row execute procedure public.handle_new_user();
 
 alter table public.profiles enable row level security;
 alter table public.critic_applications enable row level security;
 
 drop policy if exists "profiles own read" on public.profiles;
-create policy "profiles own read" on public.profiles for select using (auth.uid() = id or exists (select 1 from public.admins where user_id = auth.uid()));
+drop policy if exists "approved critic profiles public read" on public.profiles;
+create policy "profiles read"
+on public.profiles for select
+using (
+  auth.uid() = id
+  or role = 'critic'
+  or exists (select 1 from public.admins where user_id = auth.uid())
+);
 
+-- Members may edit their profile details, but cannot change their role.
 drop policy if exists "profiles own update" on public.profiles;
-create policy "profiles own update" on public.profiles for update using (auth.uid() = id) with check (auth.uid() = id);
+create policy "profiles own update"
+on public.profiles for update
+using (auth.uid() = id)
+with check (
+  auth.uid() = id
+  and role = (select p.role from public.profiles p where p.id = auth.uid())
+);
 
 drop policy if exists "applications own insert" on public.critic_applications;
-create policy "applications own insert" on public.critic_applications for insert with check (auth.uid() = user_id);
+create policy "applications own insert"
+on public.critic_applications for insert
+with check (auth.uid() = user_id);
 
 drop policy if exists "applications own read" on public.critic_applications;
-create policy "applications own read" on public.critic_applications for select using (auth.uid() = user_id or exists (select 1 from public.admins where user_id = auth.uid()));
+create policy "applications own read"
+on public.critic_applications for select
+using (
+  auth.uid() = user_id
+  or exists (select 1 from public.admins where user_id = auth.uid())
+);
 
 drop policy if exists "applications admin update" on public.critic_applications;
-create policy "applications admin update" on public.critic_applications for update using (exists (select 1 from public.admins where user_id = auth.uid())) with check (exists (select 1 from public.admins where user_id = auth.uid()));
+create policy "applications admin update"
+on public.critic_applications for update
+using (exists (select 1 from public.admins where user_id = auth.uid()))
+with check (exists (select 1 from public.admins where user_id = auth.uid()));
 
--- Allow authenticated members to read the public critic directory.
-drop policy if exists "approved critic profiles public read" on public.profiles;
-create policy "approved critic profiles public read" on public.profiles for select using (role = 'critic');
-
--- Admins can manage the editorial critic directory.
 drop policy if exists "admins manage critics" on public.critics;
-create policy "admins manage critics" on public.critics for all using (exists (select 1 from public.admins where user_id = auth.uid())) with check (exists (select 1 from public.admins where user_id = auth.uid()));
+create policy "admins manage critics"
+on public.critics for all
+using (exists (select 1 from public.admins where user_id = auth.uid()))
+with check (exists (select 1 from public.admins where user_id = auth.uid()));
+
+-- Defense-in-depth: only an administrator can ever change a profile's role.
+create or replace function public.prevent_role_self_change()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if old.role is distinct from new.role
+     and not exists (select 1 from public.admins where user_id = auth.uid()) then
+    raise exception 'Only administrators can change critic status';
+  end if;
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists prevent_role_self_change on public.profiles;
+create trigger prevent_role_self_change
+before update on public.profiles
+for each row execute procedure public.prevent_role_self_change();
+
+-- Admin-only approval: promotes the member and creates/updates the public critic directory entry atomically.
+create or replace function public.approve_critic_application(
+  application_id bigint,
+  admin_notes_value text default null
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  a public.critic_applications%rowtype;
+begin
+  if not exists (select 1 from public.admins where user_id = auth.uid()) then
+    raise exception 'Administrator access required';
+  end if;
+
+  select * into a
+  from public.critic_applications
+  where id = application_id
+  for update;
+
+  if not found then
+    raise exception 'Critic application not found';
+  end if;
+
+  update public.profiles
+  set role = 'critic',
+      display_name = a.full_name,
+      bio = coalesce(a.bio, ''),
+      updated_at = now()
+  where id = a.user_id;
+
+  insert into public.critics (user_id, name, bio, avatar_url)
+  values (a.user_id, a.full_name, coalesce(a.bio, ''), '')
+  on conflict (user_id) do update
+  set name = excluded.name,
+      bio = excluded.bio;
+
+  update public.critic_applications
+  set status = 'approved',
+      admin_notes = admin_notes_value,
+      reviewed_at = now()
+  where id = a.id;
+end;
+$$;
+
+create or replace function public.reject_critic_application(
+  application_id bigint,
+  admin_notes_value text default null
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.admins where user_id = auth.uid()) then
+    raise exception 'Administrator access required';
+  end if;
+
+  update public.critic_applications
+  set status = 'rejected',
+      admin_notes = admin_notes_value,
+      reviewed_at = now()
+  where id = application_id;
+
+  if not found then
+    raise exception 'Critic application not found';
+  end if;
+end;
+$$;
+
+revoke all on function public.approve_critic_application(bigint,text) from public;
+grant execute on function public.approve_critic_application(bigint,text) to authenticated;
+
+revoke all on function public.reject_critic_application(bigint,text) from public;
+grant execute on function public.reject_critic_application(bigint,text) to authenticated;
