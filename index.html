@@ -242,12 +242,22 @@ async function submitApplication(){
   if(r.error){apErr.textContent=r.error.message;return}
   document.getElementById('apply').classList.remove('show');await refreshAccount();memberTab('application');alert('Application submitted successfully. It is now pending administrator review.');
 }
+async function openCriticApplication(){
+  if(!user){openLogin();return}
+  const modal=document.getElementById('apply');
+  if(!modal)return;
+  await fillApplication();
+  modal.classList.add('show');
+}
 async function fillApplication(){
   if(!user)return;
   let p=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
-  if(p.data)apName.value=p.data.display_name||'';
+  const nameInput=document.getElementById('apName');
+  if(p.data&&nameInput)nameInput.value=p.data.display_name||'';
   let a=await sb.from('critic_applications').select('status').eq('user_id',user.id).order('created_at',{ascending:false}).limit(1).maybeSingle();
   const btn=document.querySelector('#apply button.btn.gold');
+  const modal=document.getElementById('apply');
+  if(modal)modal.classList.add('show');
   if(a.data?.status==='pending'){apErr.textContent='Your application is already pending administrator review.';if(btn)btn.disabled=true}
   else if(a.data?.status==='approved'){apErr.textContent='Your critic application has already been approved.';if(btn)btn.disabled=true}
   else {if(btn)btn.disabled=false}
