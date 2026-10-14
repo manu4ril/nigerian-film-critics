@@ -181,12 +181,16 @@ async function refreshAccount(){
   const avatar=profile.avatar_url||GENERIC_AVATARS[0];
   const displayName=profile.display_name||user.email?.split('@')[0]||'Member';
   document.getElementById('memberWelcome').textContent='Welcome back, '+displayName;
-  document.getElementById('memberSummary').innerHTML=`<div class="portal-card"><div class="portal-profile"><img class="portal-avatar" src="${esc(avatar)}" onerror="this.src='${GENERIC_AVATARS[0]}'"><div><h3 style="margin:0 0 6px">${esc(displayName)}</h3><span class="status-pill">${isCritic?'Verified Critic':'Verified Member'}</span><p class="muted" style="margin:7px 0 0">${esc(user.email||'')}</p></div></div><p class="muted" style="margin:0">${esc(profile.bio||'Complete your profile to personalize your member experience.')}</p></div>`;
+  document.getElementById('memberSummary').innerHTML=`<div class="portal-card"><div class="portal-profile"><img class="portal-avatar" src="${esc(avatar)}" onerror="this.src='${avatarUrlForName(displayName)}'"><div><h3 style="margin:0 0 6px">${esc(displayName)}</h3><span class="status-pill">${isCritic?'Verified Critic':'Verified Member'}</span><p class="muted" style="margin:7px 0 0">${esc(user.email||'')}</p></div></div><p class="muted" style="margin:0">${esc(profile.bio||'Complete your profile to personalize your member experience.')}</p></div>`;
   let status=a.data?.status||null;
   let statusText=status?status.charAt(0).toUpperCase()+status.slice(1):'No application submitted';
   let action=isCritic
-    ? '<br><button class="btn gold" onclick="openCriticReviewSubmit()">Submit a film review</button> <button class="btn dark" onclick="openCriticEditor()">Edit public critic profile</button>'
-    : '<br><button class="btn gold" onclick="document.getElementById(\'account\').classList.remove(\'show\');document.getElementById(\'apply\').classList.add(\'show\');fillApplication()">Apply to become a critic</button>';
+     ? '<br><button class="btn gold" onclick="openCriticReviewSubmit()">Submit a film review</button> <button class="btn dark" onclick="openCriticEditor()">Edit public critic profile</button>'
+     : status==='pending'
+       ? '<br><p class="muted">Your critic application is currently pending administrator review.</p>'
+       : status==='approved'
+         ? '<br><p class="muted">Your critic application has been approved.</p>'
+         : '<br><button class="btn gold" type="button" onclick="fillApplication();document.getElementById(\'apply\').classList.add(\'show\')">Apply to become a critic</button>';
   document.getElementById('accountContentPage').innerHTML=`
     <p class="muted">${esc(user.email||'')}</p>
     <div class="panel body">
