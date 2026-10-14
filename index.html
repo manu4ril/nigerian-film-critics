@@ -106,32 +106,25 @@ async function showAccount(){
   await refreshAccount();
   const notice=document.getElementById('loginSuccess');
   if(notice)notice.textContent='✓ Sign in successful. Welcome to your Member Dashboard.';
-} const GENERIC_AVATARS=[
-  'https://api.dicebear.com/9.x/initials/svg?seed=Film%20Critic',
-  'https://api.dicebear.com/9.x/initials/svg?seed=Nigerian%20Cinema',
-  'https://api.dicebear.com/9.x/initials/svg?seed=Film%20Writer',
-  'https://api.dicebear.com/9.x/initials/svg?seed=Movie%20Lover',
-  'https://api.dicebear.com/9.x/initials/svg?seed=Critics%20Club'
-];
+} function avatarUrlForName(name){
+  const full=String(name||'Member').trim()||'Member';
+  return 'https://api.dicebear.com/9.x/initials/svg?seed='+encodeURIComponent(full)+'&chars=2&fontSize=42';
+}
 function renderAvatarChoices(){
-  const box=document.getElementById('avatarChoices');
-  if(!box)return;
-  box.innerHTML=GENERIC_AVATARS.map((url,i)=>'<button type="button" class="avatar-choice" onclick="selectAvatar('+i+')" style="width:58px;height:58px;border:2px solid #333;border-radius:50%;padding:0;background:#111;overflow:hidden;cursor:pointer"><img src="'+url+'" style="width:100%;height:100%;object-fit:cover" alt="Avatar '+(i+1)+'"></button>').join('');
+  const box=document.getElementById('avatarChoices'); if(!box)return;
+  const name=document.getElementById('profileNamePage')?.value||user?.user_metadata?.display_name||'Member';
+  const current= document.getElementById('profileAvatarPage')?.value||'';
+  const options=[avatarUrlForName(name),'https://api.dicebear.com/9.x/initials/svg?seed=Nigerian%20Cinema&chars=2','https://api.dicebear.com/9.x/initials/svg?seed=Film%20Critic&chars=2'];
+  box.innerHTML=options.map((url,i)=>'<button type="button" class="avatar-choice" onclick="selectAvatar('+i+')" style="width:58px;height:58px;border:2px solid #333;border-radius:50%;padding:0;background:#111;overflow:hidden;cursor:pointer"><img src="'+url+'" style="width:100%;height:100%;object-fit:cover" alt="Avatar '+(i===0?'Your initials':'Generic avatar')+'"></button>').join('');
+  box.dataset.initialsAvatar=options[0]; box.dataset.option1=options[1]; box.dataset.option2=options[2];
   highlightSelectedAvatar();
 }
 function selectAvatar(i){
-  const input=document.getElementById('profileAvatarPage');
-  if(!input)return;
-  input.value=GENERIC_AVATARS[i];
-  highlightSelectedAvatar();
-  const e=document.getElementById('profileAvatarErr'); if(e)e.textContent='';
+  const box=document.getElementById('avatarChoices'); const input=document.getElementById('profileAvatarPage'); if(!box||!input)return;
+  const urls=[box.dataset.initialsAvatar,box.dataset.option1,box.dataset.option2]; input.value=urls[i]||urls[0]; highlightSelectedAvatar();
+  const e=document.getElementById('profileAvatarErr');if(e)e.textContent='';
 }
-function highlightSelectedAvatar(){
-  const input=document.getElementById('profileAvatarPage');
-  document.querySelectorAll('.avatar-choice').forEach((b,i)=>{
-    b.style.borderColor=(GENERIC_AVATARS[i]===input.value)?'var(--gold)':'#333';
-  });
-}
+function highlightSelectedAvatar(){const input=document.getElementById('profileAvatarPage');document.querySelectorAll('.avatar-choice').forEach((b,i)=>{const box=document.getElementById('avatarChoices');const urls=[box?.dataset.initialsAvatar,box?.dataset.option1,box?.dataset.option2];b.style.borderColor=(urls[i]===input.value)?'var(--gold)':'#333'})}
 function handleAvatarUpload(file){
   const e=document.getElementById('profileAvatarErr');
   if(!file)return;
